@@ -175,6 +175,21 @@ textarea {
   transition: border-color 120ms ease, box-shadow 120ms ease, background 120ms ease;
 }
 
+.password-wrap {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.icon-btn {
+  width: 56px;
+  justify-content: center;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 10px 12px;
+}
+
 input:focus,
 textarea:focus {
   border-color: var(--border);

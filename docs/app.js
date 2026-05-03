@@ -13,6 +13,7 @@ const quotaValueEl = document.getElementById('quotaValue');
 const authValueEl = document.getElementById('authValue');
 const loginPanelEl = document.getElementById('loginPanel');
 const loginPasswordEl = document.getElementById('loginPassword');
+const toggleLoginPasswordBtn = document.getElementById('toggleLoginPassword');
 const loginBtn = document.getElementById('loginBtn');
 const logoutBtn = document.getElementById('logoutBtn');
 const loginResultEl = document.getElementById('loginResult');
@@ -56,6 +57,7 @@ function renderAuthState() {
   if (logoutBtn) logoutBtn.disabled = !authed;
   if (loginPasswordEl) loginPasswordEl.disabled = authed;
   if (loginBtn) loginBtn.disabled = authed;
+  if (toggleLoginPasswordBtn) toggleLoginPasswordBtn.disabled = authed;
 }
 
 function setResult(obj, ok) {
@@ -237,6 +239,14 @@ function logout() {
 
 if (loginBtn) loginBtn.addEventListener('click', () => login());
 if (logoutBtn) logoutBtn.addEventListener('click', () => logout());
+if (toggleLoginPasswordBtn && loginPasswordEl) {
+  toggleLoginPasswordBtn.addEventListener('click', () => {
+    const isPassword = loginPasswordEl.type === 'password';
+    loginPasswordEl.type = isPassword ? 'text' : 'password';
+    toggleLoginPasswordBtn.textContent = isPassword ? 'ocultar' : 'ver';
+    toggleLoginPasswordBtn.setAttribute('aria-label', isPassword ? 'Ocultar senha' : 'Mostrar senha');
+  });
+}
 
 renderAuthState();
 loadQuota();
