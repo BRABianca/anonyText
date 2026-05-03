@@ -5,11 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Enviar SMS (Textbelt)</title>
     <link rel="stylesheet" href="./styles.css" />
+    <script>
+      window.API_BASE_URL = 'https://SEU-SERVICO.onrender.com';
+      window.AUTO_REFRESH_MS = 5000;
+    </script>
   </head>
   <body>
     <div class="container">
       <h1>Enviar SMS via Textbelt</h1>
-      <p class="muted">Formulário simples que chama <code>POST /sms</code> no seu backend.</p>
+      <p class="muted">Front-end estático (GitHub Pages) chamando o backend (Render).</p>
 
       <label for="phone">Telefone (E.164)</label>
       <input id="phone" placeholder="+556799999999" autocomplete="tel" />
@@ -17,7 +21,6 @@
 
       <label for="message">Mensagem</label>
       <textarea id="message" placeholder="Digite sua mensagem..."></textarea>
-      <div class="hint">Mensagens longas/Unicode podem consumir mais créditos (segmentos).</div>
 
       <div class="row">
         <span class="pill">

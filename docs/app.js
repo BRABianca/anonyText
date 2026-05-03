@@ -104,3 +104,4 @@ clearBtn.addEventListener('click', () => {
 
 loadReplies();
 setInterval(() => loadReplies(), AUTO_REFRESH_MS);
+

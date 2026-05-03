@@ -84,6 +84,37 @@ async function enviarSMS(phone, message) {
 const app = express();
 app.locals.smsReplies = [];
 app.use(express.static(path.join(__dirname, 'public')));
+function getCorsOrigins() {
+  const raw = process.env.CORS_ORIGINS || process.env.CORS_ORIGIN;
+  if (!raw) return [];
+  return String(raw)
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+const corsOrigins = getCorsOrigins();
+app.use((req, res, next) => {
+  const origin = req.get('origin');
+
+  if (origin && corsOrigins.length > 0) {
+    const allowed = corsOrigins.includes('*') || corsOrigins.includes(origin);
+    if (allowed) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Vary', 'Origin');
+      res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    }
+  }
+
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(204);
+  }
+
+  return next();
+});
+
+
 
 // Parse do body em JSON (requisito: body-parser) + captura do JSON bruto (necessário para validar assinatura do webhook)
 app.use(
