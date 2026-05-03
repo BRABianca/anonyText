@@ -12,33 +12,58 @@
   </head>
   <body>
     <div class="container">
-      <h1>Enviar SMS via Textbelt</h1>
-      <p class="muted">Front-end estático (GitHub Pages) chamando o backend (Render).</p>
-
-      <label for="phone">Telefone (E.164)</label>
-      <input id="phone" placeholder="+556799999999" autocomplete="tel" />
-      <div class="hint">Formato internacional: + seguido de dígitos (ex.: +5511912345678).</div>
-
-      <label for="message">Mensagem</label>
-      <textarea id="message" placeholder="Digite sua mensagem..."></textarea>
-
-      <div class="row">
-        <span class="pill">
-          <input id="dryRun" type="checkbox" />
-          <label for="dryRun" class="inline-label">Dry-run (não envia)</label>
-        </span>
-
-        <button class="primary" id="sendBtn" type="button">Enviar</button>
-        <button id="clearBtn" type="button">Limpar</button>
+      <div class="topbar">
+        <div class="brand">
+          <div class="brand-title">ANONYTEXT</div>
+          <div class="brand-sub">console / sms relay</div>
+        </div>
+        <div class="pillbar">
+          <span class="tag"><b>backend</b> <span id="apiBaseValue">-</span></span>
+          <span class="tag"><b>env</b> <span id="envValue">-</span></span>
+          <span class="tag"><b>quota</b> <span id="quotaValue">-</span></span>
+        </div>
       </div>
 
-      <pre id="result" aria-live="polite"></pre>
+      <div class="grid">
+        <div class="panel">
+          <h1>Enviar SMS</h1>
+          <p>Front-end estático (GitHub Pages) chamando o backend (Render).</p>
 
-      <div class="row replies-row">
-        <button id="refreshRepliesBtn" type="button">Atualizar replies</button>
-        <span class="hint" id="repliesStatus"></span>
+          <label for="phone">Telefone (E.164)</label>
+          <input id="phone" placeholder="+556799999999" autocomplete="tel" />
+          <div class="hint">Formato internacional: + seguido de dígitos (ex.: +5511912345678).</div>
+
+          <label for="message">Mensagem</label>
+          <textarea id="message" placeholder="Digite sua mensagem..."></textarea>
+
+          <label for="password">Senha (para enviar)</label>
+          <input id="password" type="password" placeholder="••••••••" autocomplete="current-password" />
+          <div class="hint">Obrigatória apenas quando Dry-run estiver desmarcado.</div>
+
+          <div class="row">
+            <span class="pill">
+              <input id="dryRun" type="checkbox" />
+              <label for="dryRun" class="inline-label">Dry-run (não envia)</label>
+            </span>
+
+            <button class="primary" id="sendBtn" type="button">Enviar</button>
+            <button id="clearBtn" type="button">Limpar</button>
+          </div>
+
+          <pre id="result" aria-live="polite"></pre>
+        </div>
+
+        <div class="panel">
+          <h1>Replies</h1>
+          <p>Atualiza automaticamente para mostrar respostas recebidas (se suportado pelo Textbelt).</p>
+
+          <div class="row replies-row">
+            <button id="refreshRepliesBtn" type="button">Atualizar replies</button>
+            <span class="hint" id="repliesStatus"></span>
+          </div>
+          <pre id="replies" aria-live="polite"></pre>
+        </div>
       </div>
-      <pre id="replies" aria-live="polite"></pre>
     </div>
 
     <script src="./app.js"></script>

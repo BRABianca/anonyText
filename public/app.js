@@ -7,6 +7,10 @@ const resultEl = document.getElementById('result');
 const repliesEl = document.getElementById('replies');
 const refreshRepliesBtn = document.getElementById('refreshRepliesBtn');
 const repliesStatusEl = document.getElementById('repliesStatus');
+const passwordEl = document.getElementById('password');
+const apiBaseValueEl = document.getElementById('apiBaseValue');
+const envValueEl = document.getElementById('envValue');
+const quotaValueEl = document.getElementById('quotaValue');
 
 const API_BASE_URL = (window.API_BASE_URL || '').toString().replace(/\/+$/, '');
 
@@ -16,6 +20,11 @@ function apiUrl(path) {
 }
 
 const AUTO_REFRESH_MS = Number(window.AUTO_REFRESH_MS) || 5000;
+const QUOTA_REFRESH_MS = 15000;
+
+if (apiBaseValueEl) {
+  apiBaseValueEl.textContent = API_BASE_URL || window.location.origin;
+}
 
 function setResult(obj, ok) {
   resultEl.className = ok ? 'ok' : 'error';
@@ -31,6 +40,12 @@ async function send() {
   const phone = (phoneEl.value || '').trim();
   const message = (messageEl.value || '').trim();
   const dryRun = dryRunEl.checked;
+  const password = (passwordEl?.value || '').trim();
+
+  if (!dryRun && !password) {
+    setResult({ success: false, error: 'Informe a senha para enviar' }, false);
+    return;
+  }
 
   sendBtn.disabled = true;
   resultEl.className = '';
@@ -40,7 +55,10 @@ async function send() {
     const url = dryRun ? apiUrl('/sms?dryRun=1') : apiUrl('/sms');
     const resp = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(dryRun ? {} : { 'X-Send-Password': password })
+      },
       body: JSON.stringify({ phone, message })
     });
 
@@ -57,6 +75,31 @@ async function send() {
     setResult({ success: false, error: String(err) }, false);
   } finally {
     sendBtn.disabled = false;
+  }
+}
+
+async function loadQuota() {
+  try {
+    const resp = await fetch(apiUrl('/sms/quota'), { method: 'GET' });
+    const text = await resp.text();
+
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = { success: false };
+    }
+
+    if (envValueEl) {
+      envValueEl.textContent = data?.environment || '-';
+    }
+
+    if (quotaValueEl) {
+      quotaValueEl.textContent =
+        typeof data?.quotaRemaining === 'number' ? String(data.quotaRemaining) : data?.quotaRemaining ?? '-';
+    }
+  } catch {
+    if (quotaValueEl) quotaValueEl.textContent = '-';
   }
 }
 
@@ -97,10 +140,13 @@ refreshRepliesBtn.addEventListener('click', () => loadReplies());
 clearBtn.addEventListener('click', () => {
   phoneEl.value = '';
   messageEl.value = '';
+  if (passwordEl) passwordEl.value = '';
   dryRunEl.checked = false;
   resultEl.className = '';
   resultEl.textContent = '';
 });
 
+loadQuota();
+setInterval(() => loadQuota(), QUOTA_REFRESH_MS);
 loadReplies();
 setInterval(() => loadReplies(), AUTO_REFRESH_MS);

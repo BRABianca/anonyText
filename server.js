@@ -35,6 +35,39 @@ function getReplyWebhookUrl() {
   return replyWebhookUrl;
 }
 
+function normalizeApiKeyForQuota(apiKey) {
+  if (!apiKey) return apiKey;
+  const key = String(apiKey);
+  return key.endsWith('_test') ? key.slice(0, -5) : key;
+}
+
+function getSendPasswordHash() {
+  return process.env.SMS_SEND_PASSWORD_HASH || process.env.SEND_PASSWORD_HASH;
+}
+
+function getSendPasswordSalt() {
+  return process.env.SMS_SEND_PASSWORD_SALT || process.env.SEND_PASSWORD_SALT;
+}
+
+function verifySendPassword(password) {
+  const hashHex = getSendPasswordHash();
+  const salt = getSendPasswordSalt();
+
+  if (!hashHex || !salt) {
+    return null;
+  }
+
+  if (typeof password !== 'string' || password.length === 0) {
+    return false;
+  }
+
+  const expected = Buffer.from(String(hashHex).trim(), 'hex');
+  const actual = crypto.scryptSync(password, String(salt), expected.length);
+
+  if (expected.length !== actual.length) return false;
+  return crypto.timingSafeEqual(expected, actual);
+}
+
 // Validação simples no padrão E.164: + seguido de 8 a 15 dígitos
 function isValidInternationalPhone(phone) {
   return typeof phone === 'string' && /^\+\d{8,15}$/.test(phone);
@@ -103,7 +136,7 @@ app.use((req, res, next) => {
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Vary', 'Origin');
       res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Send-Password');
     }
   }
 
@@ -125,6 +158,27 @@ app.use(
     }
   })
 );
+
+app.get('/sms/quota', async (req, res) => {
+  try {
+    const apiKey = normalizeApiKeyForQuota(getTextbeltApiKey());
+
+    if (!apiKey) {
+      return res.status(500).json({ success: false, error: 'TEXTBELT_API_KEY não configurada' });
+    }
+
+    const url = `https://textbelt.com/quota/${encodeURIComponent(apiKey)}`;
+    const response = await axios.get(url);
+
+    return res.status(200).json({
+      success: Boolean(response?.data?.success),
+      quotaRemaining: response?.data?.quotaRemaining,
+      environment: getRuntimeEnv()
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, error: error?.message || String(error) });
+  }
+});
 
 app.get('/sms/replies', (req, res) => {
   const replies = Array.isArray(app.locals.smsReplies) ? app.locals.smsReplies : [];
@@ -240,8 +294,19 @@ app.post('/sms', async (req, res) => {
         phone,
         message,
         environment: getRuntimeEnv(),
-        replyWebhookUrlConfigured: Boolean(process.env.TEXTBELT_REPLY_WEBHOOK_URL)
+        replyWebhookUrlConfigured: Boolean(getReplyWebhookUrl())
       });
+    }
+
+    const password = req.get('x-send-password') || req.body?.password;
+    const passwordValid = verifySendPassword(password);
+
+    if (passwordValid === null) {
+      return res.status(500).json({ success: false, error: 'Senha de envio não configurada no servidor' });
+    }
+
+    if (!passwordValid) {
+      return res.status(401).json({ success: false, error: 'Senha inválida' });
     }
 
     if (!getTextbeltApiKey()) {
