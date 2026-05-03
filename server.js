@@ -3,9 +3,88 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const crypto = require('crypto');
 const path = require('path');
+const { Pool } = require('pg');
 
 // Endpoint oficial do Textbelt para envio de SMS
 const TEXTBELT_URL = 'https://textbelt.com/text';
+
+function getDatabaseUrl() {
+  return process.env.DATABASE_URL;
+}
+
+let dbPool = null;
+
+function getDbSslOptions() {
+  const env = getRuntimeEnv();
+  if (env === 'production') {
+    return { rejectUnauthorized: false };
+  }
+
+  return undefined;
+}
+
+async function initDb() {
+  const url = getDatabaseUrl();
+  if (!url) return;
+
+  dbPool = new Pool({
+    connectionString: url,
+    ssl: getDbSslOptions()
+  });
+
+  await dbPool.query(`
+    CREATE TABLE IF NOT EXISTS sms_replies (
+      id BIGSERIAL PRIMARY KEY,
+      received_at TIMESTAMPTZ NOT NULL,
+      text_id TEXT,
+      from_number TEXT,
+      message_text TEXT,
+      data TEXT,
+      payload JSONB
+    )
+  `);
+}
+
+async function saveReplyToDb(reply, payload) {
+  if (!dbPool) return;
+
+  await dbPool.query(
+    `
+      INSERT INTO sms_replies (received_at, text_id, from_number, message_text, data, payload)
+      VALUES ($1, $2, $3, $4, $5, $6)
+    `,
+    [
+      reply.receivedAt,
+      reply.textId ?? null,
+      reply.fromNumber ?? null,
+      reply.text ?? null,
+      reply.data ?? null,
+      payload ?? null
+    ]
+  );
+}
+
+async function listRepliesFromDb(limit) {
+  if (!dbPool) return null;
+
+  const result = await dbPool.query(
+    `
+      SELECT received_at, text_id, from_number, message_text, data
+      FROM sms_replies
+      ORDER BY received_at DESC, id DESC
+      LIMIT $1
+    `,
+    [limit]
+  );
+
+  return result.rows.map((r) => ({
+    receivedAt: new Date(r.received_at).toISOString(),
+    textId: r.text_id,
+    fromNumber: r.from_number,
+    text: r.message_text,
+    data: r.data
+  }));
+}
 
 function getRuntimeEnv() {
   return process.env.NODE_ENV || 'development';
@@ -298,12 +377,21 @@ app.get('/sms/quota', requireAuth, async (req, res) => {
   }
 });
 
-app.get('/sms/replies', requireAuth, (req, res) => {
-  const replies = Array.isArray(app.locals.smsReplies) ? app.locals.smsReplies : [];
-  const limitRaw = req.query?.limit;
-  const limit = Math.max(1, Math.min(50, Number(limitRaw) || 50));
+app.get('/sms/replies', requireAuth, async (req, res) => {
+  try {
+    const limitRaw = req.query?.limit;
+    const limit = Math.max(1, Math.min(50, Number(limitRaw) || 50));
 
-  return res.status(200).json({ success: true, replies: replies.slice(-limit).reverse() });
+    const fromDb = await listRepliesFromDb(limit);
+    if (fromDb) {
+      return res.status(200).json({ success: true, replies: fromDb });
+    }
+
+    const replies = Array.isArray(app.locals.smsReplies) ? app.locals.smsReplies : [];
+    return res.status(200).json({ success: true, replies: replies.slice(-limit).reverse() });
+  } catch (error) {
+    return res.status(500).json({ success: false, error: error?.message || String(error) });
+  }
 });
 
 function signatureToBuffer(signature) {
@@ -331,7 +419,7 @@ function verifyTextbeltWebhook(apiKey, timestamp, requestSignature, requestPaylo
 }
 
 // Webhook de replies do Textbelt (POST). Precisa ser um endpoint público (HTTP/HTTPS) para o Textbelt conseguir chamar.
-app.post('/sms/reply', (req, res) => {
+app.post('/sms/reply', async (req, res) => {
   try {
     const apiKey = getTextbeltApiKey();
     const signature = req.get('x-textbelt-signature');
@@ -361,8 +449,9 @@ app.post('/sms/reply', (req, res) => {
     }
 
     const { textId, fromNumber, text, data } = req.body || {};
+    const receivedAt = new Date();
     const reply = {
-      receivedAt: new Date().toISOString(),
+      receivedAt: receivedAt.toISOString(),
       textId,
       fromNumber,
       text,
@@ -372,6 +461,21 @@ app.post('/sms/reply', (req, res) => {
     app.locals.smsReplies.push(reply);
     if (app.locals.smsReplies.length > 50) {
       app.locals.smsReplies.shift();
+    }
+
+    try {
+      await saveReplyToDb(
+        {
+          receivedAt: receivedAt.toISOString(),
+          textId,
+          fromNumber,
+          text,
+          data
+        },
+        req.body || null
+      );
+    } catch (error) {
+      console.error('Falha ao salvar reply no banco:', error?.message || String(error));
     }
 
     console.log('SMS reply recebido:', reply);
@@ -444,10 +548,15 @@ app.post('/sms', async (req, res) => {
 if (require.main === module) {
   const port = Number(process.env.PORT) || 3000;
 
-  // Inicia o servidor apenas quando executado diretamente (node server.js)
-  app.listen(port, () => {
-    console.log(`SMS API rodando na porta ${port}`);
-  });
+  initDb()
+    .catch((error) => {
+      console.error('Falha ao inicializar banco:', error?.message || String(error));
+    })
+    .finally(() => {
+      app.listen(port, () => {
+        console.log(`SMS API rodando na porta ${port}`);
+      });
+    });
 }
 
 module.exports = { enviarSMS, app };
