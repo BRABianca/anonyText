@@ -126,7 +126,23 @@ function getCorsOrigins() {
     .filter(Boolean);
 }
 
+function getSendAllowedOrigins() {
+  const raw = process.env.SMS_SEND_ALLOWED_ORIGINS || process.env.SEND_ALLOWED_ORIGINS;
+  if (!raw) return [];
+  return String(raw)
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function isOriginAllowed(origin, allowedOrigins) {
+  if (!origin) return false;
+  if (!Array.isArray(allowedOrigins) || allowedOrigins.length === 0) return true;
+  return allowedOrigins.includes('*') || allowedOrigins.includes(origin);
+}
+
 const corsOrigins = getCorsOrigins();
+const sendAllowedOrigins = getSendAllowedOrigins();
 app.use((req, res, next) => {
   const origin = req.get('origin');
 
@@ -296,6 +312,11 @@ app.post('/sms', async (req, res) => {
         environment: getRuntimeEnv(),
         replyWebhookUrlConfigured: Boolean(getReplyWebhookUrl())
       });
+    }
+
+    const origin = req.get('origin');
+    if (!isOriginAllowed(origin, sendAllowedOrigins)) {
+      return res.status(403).json({ success: false, error: 'Origem não autorizada' });
     }
 
     const password = req.get('x-send-password') || req.body?.password;
