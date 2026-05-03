@@ -40,18 +40,23 @@ async function initDb() {
       from_number TEXT,
       message_text TEXT,
       data TEXT,
-      payload JSONB
+      payload JSONB,
+      payload_hash TEXT
     )
   `);
+
+  await dbPool.query(`ALTER TABLE sms_replies ADD COLUMN IF NOT EXISTS payload_hash TEXT`);
+  await dbPool.query(`CREATE UNIQUE INDEX IF NOT EXISTS sms_replies_payload_hash_uq ON sms_replies (payload_hash)`);
 }
 
-async function saveReplyToDb(reply, payload) {
+async function saveReplyToDb(reply, payload, payloadHash) {
   if (!dbPool) return;
 
   await dbPool.query(
     `
-      INSERT INTO sms_replies (received_at, text_id, from_number, message_text, data, payload)
-      VALUES ($1, $2, $3, $4, $5, $6)
+      INSERT INTO sms_replies (received_at, text_id, from_number, message_text, data, payload, payload_hash)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      ON CONFLICT (payload_hash) DO NOTHING
     `,
     [
       reply.receivedAt,
@@ -59,7 +64,8 @@ async function saveReplyToDb(reply, payload) {
       reply.fromNumber ?? null,
       reply.text ?? null,
       reply.data ?? null,
-      payload ?? null
+      payload ?? null,
+      payloadHash ?? null
     ]
   );
 }
@@ -449,6 +455,11 @@ app.post('/sms/reply', async (req, res) => {
     }
 
     const { textId, fromNumber, text, data } = req.body || {};
+
+    if (typeof text !== 'string' || text.trim().length === 0) {
+      return res.status(200).json({ success: true });
+    }
+
     const receivedAt = new Date();
     const reply = {
       receivedAt: receivedAt.toISOString(),
@@ -464,6 +475,7 @@ app.post('/sms/reply', async (req, res) => {
     }
 
     try {
+      const payloadHash = crypto.createHash('sha256').update(rawBodyBuffer).digest('hex');
       await saveReplyToDb(
         {
           receivedAt: receivedAt.toISOString(),
@@ -472,7 +484,8 @@ app.post('/sms/reply', async (req, res) => {
           text,
           data
         },
-        req.body || null
+        req.body || null,
+        payloadHash
       );
     } catch (error) {
       console.error('Falha ao salvar reply no banco:', error?.message || String(error));
