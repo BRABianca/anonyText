@@ -6,6 +6,34 @@ const crypto = require('crypto');
 // Endpoint oficial do Textbelt para envio de SMS
 const TEXTBELT_URL = 'https://textbelt.com/text';
 
+function getRuntimeEnv() {
+  return process.env.NODE_ENV || 'development';
+}
+
+function getTextbeltApiKey() {
+  const env = getRuntimeEnv();
+  const apiKey = process.env.TEXTBELT_API_KEY;
+  const apiKeyTest = process.env.TEXTBELT_API_KEY_TEST;
+
+  if (env !== 'production' && apiKeyTest) {
+    return apiKeyTest;
+  }
+
+  return apiKey;
+}
+
+function getReplyWebhookUrl() {
+  const env = getRuntimeEnv();
+  const replyWebhookUrl = process.env.TEXTBELT_REPLY_WEBHOOK_URL;
+  const replyWebhookUrlTest = process.env.TEXTBELT_REPLY_WEBHOOK_URL_TEST;
+
+  if (env !== 'production' && replyWebhookUrlTest) {
+    return replyWebhookUrlTest;
+  }
+
+  return replyWebhookUrl;
+}
+
 // Validação simples no padrão E.164: + seguido de 8 a 15 dígitos
 function isValidInternationalPhone(phone) {
   return typeof phone === 'string' && /^\+\d{8,15}$/.test(phone);
@@ -14,8 +42,8 @@ function isValidInternationalPhone(phone) {
 // Função solicitada: envia SMS via Textbelt e retorna o resultado da API
 async function enviarSMS(phone, message) {
   try {
-    const apiKey = process.env.TEXTBELT_API_KEY;
-    const replyWebhookUrl = process.env.TEXTBELT_REPLY_WEBHOOK_URL;
+    const apiKey = getTextbeltApiKey();
+    const replyWebhookUrl = getReplyWebhookUrl();
 
     if (!apiKey) {
       return { success: false, error: 'TEXTBELT_API_KEY não configurada' };
@@ -60,39 +88,49 @@ app.use(
   bodyParser.json({
     verify: (req, res, buf) => {
       req.rawBody = buf.toString('utf8');
+      req.rawBodyBuffer = Buffer.from(buf);
     }
   })
 );
 
-function verifyTextbeltWebhook(apiKey, timestamp, requestSignature, requestPayload) {
-  const mySignature = crypto
-    .createHmac('sha256', apiKey)
-    .update(String(timestamp) + String(requestPayload))
-    .digest('hex');
+function signatureToBuffer(signature) {
+  try {
+    const sig = String(signature).trim();
+    if (sig.length % 2 === 0 && /^[0-9a-fA-F]+$/.test(sig)) {
+      return Buffer.from(sig, 'hex');
+    }
+  } catch {}
 
-  const a = Buffer.from(String(requestSignature));
-  const b = Buffer.from(String(mySignature));
+  return Buffer.from(String(signature));
+}
 
-  if (a.length !== b.length) {
-    return false;
-  }
+function verifyTextbeltWebhook(apiKey, timestamp, requestSignature, requestPayloadBuffer) {
+  const hmac = crypto.createHmac('sha256', apiKey);
+  hmac.update(String(timestamp));
+  hmac.update(requestPayloadBuffer);
+  const mySignatureHex = hmac.digest('hex');
 
+  const a = signatureToBuffer(requestSignature);
+  const b = signatureToBuffer(mySignatureHex);
+
+  if (a.length !== b.length) return false;
   return crypto.timingSafeEqual(a, b);
 }
 
 // Webhook de replies do Textbelt (POST). Precisa ser um endpoint público (HTTP/HTTPS) para o Textbelt conseguir chamar.
 app.post('/sms/reply', (req, res) => {
   try {
-    const apiKey = process.env.TEXTBELT_API_KEY;
+    const apiKey = getTextbeltApiKey();
     const signature = req.get('x-textbelt-signature');
     const timestamp = req.get('x-textbelt-timestamp');
     const rawBody = req.rawBody;
+    const rawBodyBuffer = req.rawBodyBuffer;
 
     if (!apiKey) {
       return res.status(500).json({ success: false, error: 'TEXTBELT_API_KEY não configurada' });
     }
 
-    if (!signature || !timestamp || typeof rawBody !== 'string') {
+    if (!signature || !timestamp || typeof rawBody !== 'string' || !Buffer.isBuffer(rawBodyBuffer)) {
       return res.status(400).json({ success: false, error: 'Webhook inválido (headers ou body ausentes)' });
     }
 
@@ -103,7 +141,7 @@ app.post('/sms/reply', (req, res) => {
       return res.status(401).json({ success: false, error: 'Webhook rejeitado (timestamp inválido/expirado)' });
     }
 
-    const valid = verifyTextbeltWebhook(apiKey, timestamp, signature, rawBody);
+    const valid = verifyTextbeltWebhook(apiKey, timestamp, signature, rawBodyBuffer);
 
     if (!valid) {
       return res.status(401).json({ success: false, error: 'Webhook rejeitado (assinatura inválida)' });
@@ -160,11 +198,12 @@ app.post('/sms', async (req, res) => {
         dryRun: true,
         phone,
         message,
+        environment: getRuntimeEnv(),
         replyWebhookUrlConfigured: Boolean(process.env.TEXTBELT_REPLY_WEBHOOK_URL)
       });
     }
 
-    if (!process.env.TEXTBELT_API_KEY) {
+    if (!getTextbeltApiKey()) {
       return res.status(500).json({ success: false, error: 'TEXTBELT_API_KEY não configurada' });
     }
 
