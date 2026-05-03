@@ -18,6 +18,7 @@
           <div class="brand-sub">console / sms relay</div>
         </div>
         <div class="pillbar">
+          <span class="tag"><b>auth</b> <span id="authValue">off</span></span>
           <span class="tag"><b>backend</b> <span id="apiBaseValue">-</span></span>
           <span class="tag"><b>env</b> <span id="envValue">-</span></span>
           <span class="tag"><b>quota</b> <span id="quotaValue">-</span></span>
@@ -25,6 +26,21 @@
       </div>
 
       <div class="grid">
+        <div class="panel" id="loginPanel">
+          <h1>Login</h1>
+          <p>Faça login para ver quota/replies e enviar SMS real.</p>
+
+          <label for="loginPassword">Senha</label>
+          <input id="loginPassword" type="password" placeholder="••••••••" autocomplete="current-password" />
+
+          <div class="row">
+            <button class="primary" id="loginBtn" type="button">Entrar</button>
+            <button id="logoutBtn" type="button">Sair</button>
+          </div>
+
+          <pre id="loginResult" aria-live="polite"></pre>
+        </div>
+
         <div class="panel">
           <h1>Enviar SMS</h1>
           <p>Front-end estático (GitHub Pages) chamando o backend (Render).</p>

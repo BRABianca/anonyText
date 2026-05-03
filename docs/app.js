@@ -10,6 +10,12 @@ const repliesStatusEl = document.getElementById('repliesStatus');
 const apiBaseValueEl = document.getElementById('apiBaseValue');
 const envValueEl = document.getElementById('envValue');
 const quotaValueEl = document.getElementById('quotaValue');
+const authValueEl = document.getElementById('authValue');
+const loginPanelEl = document.getElementById('loginPanel');
+const loginPasswordEl = document.getElementById('loginPassword');
+const loginBtn = document.getElementById('loginBtn');
+const logoutBtn = document.getElementById('logoutBtn');
+const loginResultEl = document.getElementById('loginResult');
 
 const API_BASE_URL = (window.API_BASE_URL || '').toString().replace(/\/+$/, '');
 
@@ -23,6 +29,33 @@ const QUOTA_REFRESH_MS = 15000;
 
 if (apiBaseValueEl) {
   apiBaseValueEl.textContent = API_BASE_URL || window.location.origin;
+}
+
+function getToken() {
+  return localStorage.getItem('authToken') || '';
+}
+
+function setToken(token) {
+  if (token) {
+    localStorage.setItem('authToken', token);
+  } else {
+    localStorage.removeItem('authToken');
+  }
+  renderAuthState();
+}
+
+function setLoginResult(obj, ok) {
+  if (!loginResultEl) return;
+  loginResultEl.className = ok ? 'ok' : 'error';
+  loginResultEl.textContent = JSON.stringify(obj, null, 2);
+}
+
+function renderAuthState() {
+  const authed = Boolean(getToken());
+  if (authValueEl) authValueEl.textContent = authed ? 'on' : 'off';
+  if (logoutBtn) logoutBtn.disabled = !authed;
+  if (loginPasswordEl) loginPasswordEl.disabled = authed;
+  if (loginBtn) loginBtn.disabled = authed;
 }
 
 function setResult(obj, ok) {
@@ -39,6 +72,12 @@ async function send() {
   const phone = (phoneEl.value || '').trim();
   const message = (messageEl.value || '').trim();
   const dryRun = dryRunEl.checked;
+  const token = getToken();
+
+  if (!dryRun && !token) {
+    setResult({ success: false, error: 'Faça login para enviar SMS real' }, false);
+    return;
+  }
 
   sendBtn.disabled = true;
   resultEl.className = '';
@@ -48,7 +87,10 @@ async function send() {
     const url = dryRun ? apiUrl('/sms?dryRun=1') : apiUrl('/sms');
     const resp = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(dryRun ? {} : { Authorization: 'Bearer ' + token })
+      },
       body: JSON.stringify({ phone, message })
     });
 
@@ -70,7 +112,14 @@ async function send() {
 
 async function loadQuota() {
   try {
-    const resp = await fetch(apiUrl('/sms/quota'), { method: 'GET' });
+    const token = getToken();
+    if (!token) {
+      if (envValueEl) envValueEl.textContent = '-';
+      if (quotaValueEl) quotaValueEl.textContent = '-';
+      return;
+    }
+
+    const resp = await fetch(apiUrl('/sms/quota'), { method: 'GET', headers: { Authorization: 'Bearer ' + token } });
     const text = await resp.text();
 
     let data;
@@ -98,7 +147,14 @@ async function loadReplies() {
   repliesStatusEl.textContent = 'Carregando...';
 
   try {
-    const resp = await fetch(apiUrl('/sms/replies'), { method: 'GET' });
+    const token = getToken();
+    if (!token) {
+      setReplies({ success: false, error: 'Faça login para ver replies' }, false);
+      repliesStatusEl.textContent = 'Login necessário';
+      return;
+    }
+
+    const resp = await fetch(apiUrl('/sms/replies'), { method: 'GET', headers: { Authorization: 'Bearer ' + token } });
     const text = await resp.text();
 
     let data;
@@ -135,6 +191,54 @@ clearBtn.addEventListener('click', () => {
   resultEl.textContent = '';
 });
 
+async function login() {
+  try {
+    const password = (loginPasswordEl?.value || '').trim();
+    if (!password) {
+      setLoginResult({ success: false, error: 'Informe a senha' }, false);
+      return;
+    }
+
+    const resp = await fetch(apiUrl('/auth/login'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password })
+    });
+
+    const text = await resp.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = { success: false, error: 'Resposta não-JSON do servidor', raw: text };
+    }
+
+    if (!resp.ok || !data?.success || !data?.token) {
+      setLoginResult({ httpStatus: resp.status, ...data }, false);
+      return;
+    }
+
+    setToken(String(data.token));
+    if (loginPasswordEl) loginPasswordEl.value = '';
+    setLoginResult({ httpStatus: resp.status, success: true }, true);
+    loadQuota();
+    loadReplies();
+  } catch (err) {
+    setLoginResult({ success: false, error: String(err) }, false);
+  }
+}
+
+function logout() {
+  setToken('');
+  setLoginResult({ success: true }, true);
+  loadQuota();
+  loadReplies();
+}
+
+if (loginBtn) loginBtn.addEventListener('click', () => login());
+if (logoutBtn) logoutBtn.addEventListener('click', () => logout());
+
+renderAuthState();
 loadQuota();
 setInterval(() => loadQuota(), QUOTA_REFRESH_MS);
 loadReplies();

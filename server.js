@@ -41,6 +41,85 @@ function normalizeApiKeyForQuota(apiKey) {
   return key.endsWith('_test') ? key.slice(0, -5) : key;
 }
 
+function getAuthSecret() {
+  return process.env.SMS_AUTH_SECRET || process.env.AUTH_SECRET;
+}
+
+function getLoginPasswordHash() {
+  return process.env.SMS_LOGIN_PASSWORD_HASH || process.env.LOGIN_PASSWORD_HASH;
+}
+
+function getLoginPasswordSalt() {
+  return process.env.SMS_LOGIN_PASSWORD_SALT || process.env.LOGIN_PASSWORD_SALT;
+}
+
+function verifyLoginPassword(password) {
+  const hashHex = getLoginPasswordHash();
+  const salt = getLoginPasswordSalt();
+
+  if (!hashHex || !salt) return null;
+  if (typeof password !== 'string' || password.length === 0) return false;
+
+  const expected = Buffer.from(String(hashHex).trim(), 'hex');
+  const actual = crypto.scryptSync(password, String(salt), expected.length);
+
+  if (expected.length !== actual.length) return false;
+  return crypto.timingSafeEqual(expected, actual);
+}
+
+function base64UrlEncode(input) {
+  const buf = Buffer.isBuffer(input) ? input : Buffer.from(String(input), 'utf8');
+  return buf
+    .toString('base64')
+    .replaceAll('+', '-')
+    .replaceAll('/', '_')
+    .replaceAll('=', '');
+}
+
+function base64UrlDecodeToString(input) {
+  const b64 = String(input).replaceAll('-', '+').replaceAll('_', '/');
+  const padded = b64 + '='.repeat((4 - (b64.length % 4)) % 4);
+  return Buffer.from(padded, 'base64').toString('utf8');
+}
+
+function signToken(payloadObj, secret) {
+  const header = { alg: 'HS256', typ: 'JWT' };
+  const headerB64 = base64UrlEncode(JSON.stringify(header));
+  const payloadB64 = base64UrlEncode(JSON.stringify(payloadObj));
+  const toSign = `${headerB64}.${payloadB64}`;
+  const sig = crypto.createHmac('sha256', secret).update(toSign).digest();
+  return `${toSign}.${base64UrlEncode(sig)}`;
+}
+
+function verifyToken(token, secret) {
+  if (typeof token !== 'string' || token.length === 0) return { ok: false };
+  const parts = token.split('.');
+  if (parts.length !== 3) return { ok: false };
+
+  const [headerB64, payloadB64, sigB64] = parts;
+  const toSign = `${headerB64}.${payloadB64}`;
+  const expectedSig = crypto.createHmac('sha256', secret).update(toSign).digest();
+
+  const expectedSigB64 = base64UrlEncode(expectedSig);
+  const a = Buffer.from(String(sigB64));
+  const b = Buffer.from(String(expectedSigB64));
+  if (a.length !== b.length) return { ok: false };
+  if (!crypto.timingSafeEqual(a, b)) return { ok: false };
+
+  let payload;
+  try {
+    payload = JSON.parse(base64UrlDecodeToString(payloadB64));
+  } catch {
+    return { ok: false };
+  }
+
+  const exp = Number(payload?.exp);
+  if (!Number.isFinite(exp)) return { ok: false };
+  if (Math.floor(Date.now() / 1000) >= exp) return { ok: false, expired: true };
+
+  return { ok: true, payload };
+}
+
 // Validação simples no padrão E.164: + seguido de 8 a 15 dígitos
 function isValidInternationalPhone(phone) {
   return typeof phone === 'string' && /^\+\d{8,15}$/.test(phone);
@@ -125,7 +204,7 @@ app.use((req, res, next) => {
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Vary', 'Origin');
       res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     }
   }
 
@@ -148,7 +227,57 @@ app.use(
   })
 );
 
-app.get('/sms/quota', async (req, res) => {
+function requireAuth(req, res, next) {
+  const secret = getAuthSecret();
+  if (!secret) {
+    return res.status(500).json({ success: false, error: 'SMS_AUTH_SECRET não configurada' });
+  }
+
+  const auth = req.get('authorization') || '';
+  const match = auth.match(/^Bearer\s+(.+)$/i);
+  if (!match) {
+    return res.status(401).json({ success: false, error: 'Não autenticado' });
+  }
+
+  const token = match[1];
+  const result = verifyToken(token, secret);
+  if (!result.ok) {
+    return res.status(401).json({ success: false, error: 'Token inválido' });
+  }
+
+  req.user = result.payload;
+  return next();
+}
+
+app.post('/auth/login', (req, res) => {
+  try {
+    const password = req.body?.password;
+    const passwordValid = verifyLoginPassword(password);
+
+    if (passwordValid === null) {
+      return res.status(500).json({ success: false, error: 'Senha de login não configurada no servidor' });
+    }
+
+    if (!passwordValid) {
+      return res.status(401).json({ success: false, error: 'Senha inválida' });
+    }
+
+    const secret = getAuthSecret();
+    if (!secret) {
+      return res.status(500).json({ success: false, error: 'SMS_AUTH_SECRET não configurada' });
+    }
+
+    const now = Math.floor(Date.now() / 1000);
+    const exp = now + 12 * 60 * 60;
+    const token = signToken({ sub: 'admin', iat: now, exp }, secret);
+
+    return res.status(200).json({ success: true, token, expiresAt: exp });
+  } catch (error) {
+    return res.status(500).json({ success: false, error: error?.message || String(error) });
+  }
+});
+
+app.get('/sms/quota', requireAuth, async (req, res) => {
   try {
     const apiKey = normalizeApiKeyForQuota(getTextbeltApiKey());
 
@@ -169,7 +298,7 @@ app.get('/sms/quota', async (req, res) => {
   }
 });
 
-app.get('/sms/replies', (req, res) => {
+app.get('/sms/replies', requireAuth, (req, res) => {
   const replies = Array.isArray(app.locals.smsReplies) ? app.locals.smsReplies : [];
   const limitRaw = req.query?.limit;
   const limit = Math.max(1, Math.min(50, Number(limitRaw) || 50));
@@ -286,6 +415,9 @@ app.post('/sms', async (req, res) => {
         replyWebhookUrlConfigured: Boolean(getReplyWebhookUrl())
       });
     }
+
+    requireAuth(req, res, () => {});
+    if (res.headersSent) return;
 
     const origin = req.get('origin');
     if (!isOriginAllowed(origin, sendAllowedOrigins)) {
