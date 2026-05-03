@@ -13,6 +13,7 @@
   --blue: #60a5fa;
   --shadow: 0 0 0 1px rgba(34, 197, 94, 0.14), 0 12px 40px rgba(0, 0, 0, 0.55);
   --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  --sans: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
 }
 
 html,
@@ -21,7 +22,7 @@ body {
 }
 
 body {
-  font-family: var(--mono);
+  font-family: var(--sans);
   margin: 0;
   padding: 24px;
   color: var(--text);
@@ -42,7 +43,7 @@ body::before {
     rgba(0, 0, 0, 0) 2px,
     rgba(0, 0, 0, 0.22) 3px
   );
-  opacity: 0.35;
+  opacity: 0.18;
   mix-blend-mode: multiply;
 }
 
@@ -57,7 +58,7 @@ body::after {
 }
 
 .container {
-  max-width: 880px;
+  max-width: 980px;
   margin: 0 auto;
   position: relative;
 }
@@ -81,9 +82,11 @@ body::after {
 }
 
 .brand-title {
+  font-family: var(--mono);
   font-size: 16px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
+  text-shadow: 0 0 18px rgba(34, 197, 94, 0.35);
 }
 
 .brand-sub {
@@ -100,6 +103,7 @@ body::after {
 }
 
 .tag {
+  font-family: var(--mono);
   display: inline-flex;
   gap: 8px;
   align-items: center;
@@ -133,6 +137,7 @@ body::after {
 }
 
 h1 {
+  font-family: var(--mono);
   margin: 0;
   font-size: 18px;
   letter-spacing: 0.08em;
@@ -157,6 +162,7 @@ label {
 
 input,
 textarea {
+  font-family: var(--mono);
   width: 100%;
   box-sizing: border-box;
   padding: 10px 12px;
@@ -181,6 +187,12 @@ textarea {
   resize: vertical;
 }
 
+input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--green);
+}
+
 .row {
   display: flex;
   gap: 12px;
@@ -194,6 +206,7 @@ textarea {
 }
 
 button {
+  font-family: var(--mono);
   padding: 10px 14px;
   border-radius: 12px;
   border: 1px solid var(--border-2);
@@ -237,6 +250,11 @@ pre {
   overflow: auto;
   background: rgba(0, 0, 0, 0.32);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .error {
@@ -260,4 +278,34 @@ pre {
 .muted {
   opacity: 1;
   color: var(--muted);
+}
+
+::selection {
+  background: rgba(34, 197, 94, 0.25);
+}
+
+@media (max-width: 720px) {
+  body {
+    padding: 16px;
+  }
+
+  .topbar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .pillbar {
+    justify-content: flex-start;
+  }
+}
+
+@media (min-width: 980px) {
+  .grid {
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+  }
+
+  #loginPanel {
+    grid-column: 1 / -1;
+  }
 }
