@@ -1,0 +1,12 @@
+.reply-grid {
+  grid-template-columns: 1fr;
+}
+
+#replyText {
+  min-height: 140px;
+}
+
+#replyResult {
+  white-space: pre-wrap;
+  word-break: break-word;
+}

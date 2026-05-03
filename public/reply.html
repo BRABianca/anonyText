@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Responder</title>
+    <link rel="icon" type="image/png" href="./favicon.png" />
+    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./reply.css" />
+  </head>
+  <body>
+    <div class="container">
+      <div class="topbar">
+        <div class="brand">
+          <div class="brand-title">ANONYTEXT</div>
+          <div class="brand-sub">reply portal</div>
+        </div>
+        <div class="pillbar">
+          <span class="tag"><b>backend</b> <span id="apiBaseValue">-</span></span>
+          <span class="tag"><b>token</b> <span id="tokenValue">-</span></span>
+        </div>
+      </div>
+
+      <div class="grid reply-grid">
+        <div class="panel">
+          <h1>Responder</h1>
+          <p id="metaLine" class="hint">Carregando…</p>
+
+          <label for="replyText">Mensagem</label>
+          <textarea id="replyText" placeholder="Digite sua resposta..."></textarea>
+
+          <div class="row">
+            <button class="primary" id="sendReplyBtn" type="button">Enviar resposta</button>
+            <button id="clearReplyBtn" type="button">Limpar</button>
+          </div>
+
+          <pre id="replyResult" aria-live="polite"></pre>
+        </div>
+      </div>
+    </div>
+
+    <script src="./reply.js"></script>
+  </body>
+</html>

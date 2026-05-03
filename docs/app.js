@@ -1,6 +1,7 @@
 const phoneEl = document.getElementById('phone');
 const messageEl = document.getElementById('message');
 const dryRunEl = document.getElementById('dryRun');
+const includeReplyLinkEl = document.getElementById('includeReplyLink');
 const sendBtn = document.getElementById('sendBtn');
 const clearBtn = document.getElementById('clearBtn');
 const resultEl = document.getElementById('result');
@@ -74,6 +75,7 @@ async function send() {
   const phone = (phoneEl.value || '').trim();
   const message = (messageEl.value || '').trim();
   const dryRun = dryRunEl.checked;
+  const includeReplyLink = includeReplyLinkEl ? Boolean(includeReplyLinkEl.checked) : true;
   const token = getToken();
 
   if (!dryRun && !token) {
@@ -93,7 +95,7 @@ async function send() {
         'Content-Type': 'application/json',
         ...(dryRun ? {} : { Authorization: 'Bearer ' + token })
       },
-      body: JSON.stringify({ phone, message })
+      body: JSON.stringify({ phone, message, includeReplyLink })
     });
 
     const text = await resp.text();
@@ -189,6 +191,7 @@ clearBtn.addEventListener('click', () => {
   phoneEl.value = '';
   messageEl.value = '';
   dryRunEl.checked = false;
+  if (includeReplyLinkEl) includeReplyLinkEl.checked = true;
   resultEl.className = '';
   resultEl.textContent = '';
 });

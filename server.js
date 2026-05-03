@@ -23,6 +23,35 @@ function getDbSslOptions() {
   return undefined;
 }
 
+function createReplyToken() {
+  return crypto.randomBytes(16).toString('hex');
+}
+
+function isValidReplyToken(token) {
+  return typeof token === 'string' && /^[0-9a-f]{32}$/i.test(token);
+}
+
+function getReplyLinkBaseUrl(req) {
+  const configured =
+    process.env.REPLY_LINK_BASE_URL ||
+    process.env.PUBLIC_REPLY_BASE_URL ||
+    process.env.PUBLIC_BASE_URL ||
+    process.env.APP_BASE_URL;
+
+  if (configured) {
+    return String(configured).replace(/\/+$/, '');
+  }
+
+  if (!req) return '';
+
+  const host = req.get('host');
+  if (!host) return '';
+
+  const forwardedProto = req.get('x-forwarded-proto');
+  const proto = (forwardedProto || req.protocol || 'https').split(',')[0].trim() || 'https';
+  return `${proto}://${host}`;
+}
+
 async function initDb() {
   const url = getDatabaseUrl();
   if (!url) return;
@@ -47,6 +76,17 @@ async function initDb() {
 
   await dbPool.query(`ALTER TABLE sms_replies ADD COLUMN IF NOT EXISTS payload_hash TEXT`);
   await dbPool.query(`CREATE UNIQUE INDEX IF NOT EXISTS sms_replies_payload_hash_uq ON sms_replies (payload_hash)`);
+
+  await dbPool.query(`
+    CREATE TABLE IF NOT EXISTS sms_conversations (
+      token TEXT PRIMARY KEY,
+      created_at TIMESTAMPTZ NOT NULL,
+      to_number TEXT NOT NULL,
+      outbound_text TEXT NOT NULL,
+      sent_text_id TEXT,
+      is_dry_run BOOLEAN NOT NULL DEFAULT FALSE
+    )
+  `);
 }
 
 async function saveReplyToDb(reply, payload, payloadHash) {
@@ -68,6 +108,57 @@ async function saveReplyToDb(reply, payload, payloadHash) {
       payloadHash ?? null
     ]
   );
+}
+
+async function saveConversationToDb(conversation) {
+  if (!dbPool) return;
+
+  await dbPool.query(
+    `
+      INSERT INTO sms_conversations (token, created_at, to_number, outbound_text, sent_text_id, is_dry_run)
+      VALUES ($1, $2, $3, $4, $5, $6)
+      ON CONFLICT (token) DO NOTHING
+    `,
+    [
+      conversation.token,
+      conversation.createdAt,
+      conversation.toNumber,
+      conversation.outboundText,
+      conversation.sentTextId ?? null,
+      Boolean(conversation.isDryRun)
+    ]
+  );
+}
+
+async function updateConversationSentTextId(token, sentTextId) {
+  if (!dbPool) return;
+  await dbPool.query(`UPDATE sms_conversations SET sent_text_id = $2 WHERE token = $1`, [token, sentTextId ?? null]);
+}
+
+async function getConversationFromDb(token) {
+  if (!dbPool) return null;
+
+  const result = await dbPool.query(
+    `
+      SELECT token, created_at, to_number, outbound_text, sent_text_id, is_dry_run
+      FROM sms_conversations
+      WHERE token = $1
+      LIMIT 1
+    `,
+    [token]
+  );
+
+  const row = result.rows?.[0];
+  if (!row) return null;
+
+  return {
+    token: row.token,
+    createdAt: new Date(row.created_at).toISOString(),
+    toNumber: row.to_number,
+    outboundText: row.outbound_text,
+    sentTextId: row.sent_text_id,
+    isDryRun: Boolean(row.is_dry_run)
+  };
 }
 
 async function listRepliesFromDb(limit) {
@@ -253,6 +344,7 @@ async function enviarSMS(phone, message) {
 
 const app = express();
 app.locals.smsReplies = [];
+app.locals.smsConversations = new Map();
 app.use(express.static(path.join(__dirname, 'public')));
 function getCorsOrigins() {
   const raw = process.env.CORS_ORIGINS || process.env.CORS_ORIGIN;
@@ -498,10 +590,105 @@ app.post('/sms/reply', async (req, res) => {
   }
 });
 
+app.get('/reply/meta', async (req, res) => {
+  try {
+    const token = String(req.query?.token || '').trim();
+    if (!isValidReplyToken(token)) {
+      return res.status(400).json({ success: false, error: 'Token inválido' });
+    }
+
+    const conversation = (await getConversationFromDb(token)) || app.locals.smsConversations.get(token) || null;
+    if (!conversation) {
+      return res.status(404).json({ success: false, error: 'Conversa não encontrada' });
+    }
+
+    const to = String(conversation.toNumber || '');
+    const masked =
+      to.length >= 6 ? `${to.slice(0, 4)}${'*'.repeat(Math.max(0, to.length - 7))}${to.slice(-3)}` : to;
+
+    return res.status(200).json({
+      success: true,
+      token: conversation.token,
+      createdAt: conversation.createdAt,
+      toNumberMasked: masked
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, error: error?.message || String(error) });
+  }
+});
+
+app.post('/reply', async (req, res) => {
+  try {
+    const token = String(req.body?.token || '').trim();
+    const text = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
+
+    if (!isValidReplyToken(token)) {
+      return res.status(400).json({ success: false, error: 'Token inválido' });
+    }
+
+    if (!text) {
+      return res.status(400).json({ success: false, error: 'Mensagem inválida' });
+    }
+
+    const conversation = (await getConversationFromDb(token)) || app.locals.smsConversations.get(token) || null;
+    if (!conversation) {
+      return res.status(404).json({ success: false, error: 'Conversa não encontrada' });
+    }
+
+    const receivedAt = new Date();
+    const payload = {
+      source: 'reply_link',
+      token,
+      text,
+      toNumber: conversation.toNumber
+    };
+
+    const payloadHash = crypto
+      .createHash('sha256')
+      .update(Buffer.from(`reply_link:${token}:`, 'utf8'))
+      .update(Buffer.from(text, 'utf8'))
+      .digest('hex');
+
+    const reply = {
+      receivedAt: receivedAt.toISOString(),
+      textId: null,
+      fromNumber: conversation.toNumber,
+      text,
+      data: JSON.stringify({ source: 'reply_link', token })
+    };
+
+    app.locals.smsReplies.push(reply);
+    if (app.locals.smsReplies.length > 50) {
+      app.locals.smsReplies.shift();
+    }
+
+    try {
+      await saveReplyToDb(
+        {
+          receivedAt: receivedAt.toISOString(),
+          textId: null,
+          fromNumber: conversation.toNumber,
+          text,
+          data: JSON.stringify({ source: 'reply_link', token })
+        },
+        payload,
+        payloadHash
+      );
+    } catch (error) {
+      console.error('Falha ao salvar reply_link no banco:', error?.message || String(error));
+    }
+
+    return res.status(200).json({ success: true });
+  } catch (error) {
+    return res.status(500).json({ success: false, error: error?.message || String(error) });
+  }
+});
+
 // Endpoint extra: recebe phone/message e envia via Textbelt
 app.post('/sms', async (req, res) => {
   try {
     const { phone, message } = req.body || {};
+    const includeReplyLink = req.body?.includeReplyLink !== false;
     const dryRunQuery = req.query?.dryRun;
     const dryRun = dryRunQuery === '1' || dryRunQuery === 'true' || req.get('x-dry-run') === '1';
 
@@ -523,11 +710,38 @@ app.post('/sms', async (req, res) => {
 
     // Modo de simulação: valida tudo, mas não consome cota nem envia SMS de verdade
     if (dryRun) {
+      let replyToken = null;
+      let replyUrl = null;
+
+      if (includeReplyLink) {
+        const baseUrl = getReplyLinkBaseUrl(req);
+        if (baseUrl) {
+          replyToken = createReplyToken();
+          replyUrl = `${baseUrl}/reply.html?token=${encodeURIComponent(replyToken)}`;
+          const conversation = {
+            token: replyToken,
+            createdAt: new Date().toISOString(),
+            toNumber: phone,
+            outboundText: message,
+            sentTextId: null,
+            isDryRun: true
+          };
+
+          app.locals.smsConversations.set(replyToken, conversation);
+          try {
+            await saveConversationToDb(conversation);
+          } catch {}
+        }
+      }
+
       return res.status(200).json({
         success: true,
         dryRun: true,
         phone,
         message,
+        includeReplyLink,
+        replyToken,
+        replyUrl,
         environment: getRuntimeEnv(),
         replyWebhookUrlConfigured: Boolean(getReplyWebhookUrl())
       });
@@ -545,14 +759,46 @@ app.post('/sms', async (req, res) => {
       return res.status(500).json({ success: false, error: 'TEXTBELT_API_KEY não configurada' });
     }
 
-    const result = await enviarSMS(phone, message);
+    let replyToken = null;
+    let replyUrl = null;
+    let outboundMessage = message;
+
+    if (includeReplyLink) {
+      const baseUrl = getReplyLinkBaseUrl(req);
+      if (baseUrl) {
+        replyToken = createReplyToken();
+        replyUrl = `${baseUrl}/reply.html?token=${encodeURIComponent(replyToken)}`;
+        outboundMessage = `${message}\n\nResponda: ${replyUrl}`;
+
+        const conversation = {
+          token: replyToken,
+          createdAt: new Date().toISOString(),
+          toNumber: phone,
+          outboundText: message,
+          sentTextId: null,
+          isDryRun: false
+        };
+
+        app.locals.smsConversations.set(replyToken, conversation);
+        try {
+          await saveConversationToDb(conversation);
+        } catch {}
+      }
+    }
+
+    const result = await enviarSMS(phone, outboundMessage);
+    if (result?.success && replyToken && result?.textId) {
+      try {
+        await updateConversationSentTextId(replyToken, String(result.textId));
+      } catch {}
+    }
 
     // Status HTTP: 200 quando enviado com sucesso; 500 quando falha no envio
     if (result?.success) {
-      return res.status(200).json(result);
+      return res.status(200).json({ ...result, replyToken, replyUrl });
     }
 
-    return res.status(500).json(result);
+    return res.status(500).json({ ...result, replyToken, replyUrl });
   } catch (error) {
     return res.status(500).json({ success: false, error: error?.message || String(error) });
   }
