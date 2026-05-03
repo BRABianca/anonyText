@@ -41,33 +41,6 @@ function normalizeApiKeyForQuota(apiKey) {
   return key.endsWith('_test') ? key.slice(0, -5) : key;
 }
 
-function getSendPasswordHash() {
-  return process.env.SMS_SEND_PASSWORD_HASH || process.env.SEND_PASSWORD_HASH;
-}
-
-function getSendPasswordSalt() {
-  return process.env.SMS_SEND_PASSWORD_SALT || process.env.SEND_PASSWORD_SALT;
-}
-
-function verifySendPassword(password) {
-  const hashHex = getSendPasswordHash();
-  const salt = getSendPasswordSalt();
-
-  if (!hashHex || !salt) {
-    return null;
-  }
-
-  if (typeof password !== 'string' || password.length === 0) {
-    return false;
-  }
-
-  const expected = Buffer.from(String(hashHex).trim(), 'hex');
-  const actual = crypto.scryptSync(password, String(salt), expected.length);
-
-  if (expected.length !== actual.length) return false;
-  return crypto.timingSafeEqual(expected, actual);
-}
-
 // Validação simples no padrão E.164: + seguido de 8 a 15 dígitos
 function isValidInternationalPhone(phone) {
   return typeof phone === 'string' && /^\+\d{8,15}$/.test(phone);
@@ -152,7 +125,7 @@ app.use((req, res, next) => {
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Vary', 'Origin');
       res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Send-Password');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
     }
   }
 
@@ -317,17 +290,6 @@ app.post('/sms', async (req, res) => {
     const origin = req.get('origin');
     if (!isOriginAllowed(origin, sendAllowedOrigins)) {
       return res.status(403).json({ success: false, error: 'Origem não autorizada' });
-    }
-
-    const password = req.get('x-send-password') || req.body?.password;
-    const passwordValid = verifySendPassword(password);
-
-    if (passwordValid === null) {
-      return res.status(500).json({ success: false, error: 'Senha de envio não configurada no servidor' });
-    }
-
-    if (!passwordValid) {
-      return res.status(401).json({ success: false, error: 'Senha inválida' });
     }
 
     if (!getTextbeltApiKey()) {

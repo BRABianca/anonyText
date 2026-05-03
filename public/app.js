@@ -7,7 +7,6 @@ const resultEl = document.getElementById('result');
 const repliesEl = document.getElementById('replies');
 const refreshRepliesBtn = document.getElementById('refreshRepliesBtn');
 const repliesStatusEl = document.getElementById('repliesStatus');
-const passwordEl = document.getElementById('password');
 const apiBaseValueEl = document.getElementById('apiBaseValue');
 const envValueEl = document.getElementById('envValue');
 const quotaValueEl = document.getElementById('quotaValue');
@@ -40,12 +39,6 @@ async function send() {
   const phone = (phoneEl.value || '').trim();
   const message = (messageEl.value || '').trim();
   const dryRun = dryRunEl.checked;
-  const password = (passwordEl?.value || '').trim();
-
-  if (!dryRun && !password) {
-    setResult({ success: false, error: 'Informe a senha para enviar' }, false);
-    return;
-  }
 
   sendBtn.disabled = true;
   resultEl.className = '';
@@ -55,10 +48,7 @@ async function send() {
     const url = dryRun ? apiUrl('/sms?dryRun=1') : apiUrl('/sms');
     const resp = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(dryRun ? {} : { 'X-Send-Password': password })
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ phone, message })
     });
 
@@ -140,7 +130,6 @@ refreshRepliesBtn.addEventListener('click', () => loadReplies());
 clearBtn.addEventListener('click', () => {
   phoneEl.value = '';
   messageEl.value = '';
-  if (passwordEl) passwordEl.value = '';
   dryRunEl.checked = false;
   resultEl.className = '';
   resultEl.textContent = '';
