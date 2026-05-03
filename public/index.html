@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Enviar SMS (Textbelt)</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="container">
+      <h1>Enviar SMS via Textbelt</h1>
+      <p class="muted">Formulário simples que chama <code>POST /sms</code> no seu backend.</p>
+
+      <label for="phone">Telefone (E.164)</label>
+      <input id="phone" placeholder="+556799999999" autocomplete="tel" />
+      <div class="hint">Formato internacional: + seguido de dígitos (ex.: +5511912345678).</div>
+
+      <label for="message">Mensagem</label>
+      <textarea id="message" placeholder="Digite sua mensagem..."></textarea>
+      <div class="hint">Mensagens longas/Unicode podem consumir mais créditos (segmentos).</div>
+
+      <div class="row">
+        <span class="pill">
+          <input id="dryRun" type="checkbox" />
+          <label for="dryRun" class="inline-label">Dry-run (não envia)</label>
+        </span>
+
+        <button class="primary" id="sendBtn" type="button">Enviar</button>
+        <button id="clearBtn" type="button">Limpar</button>
+      </div>
+
+      <pre id="result" aria-live="polite"></pre>
+
+      <div class="row replies-row">
+        <button id="refreshRepliesBtn" type="button">Atualizar replies</button>
+        <span class="hint" id="repliesStatus"></span>
+      </div>
+      <pre id="replies" aria-live="polite"></pre>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

@@ -2,6 +2,7 @@ const axios = require('axios');
 const express = require('express');
 const bodyParser = require('body-parser');
 const crypto = require('crypto');
+const path = require('path');
 
 // Endpoint oficial do Textbelt para envio de SMS
 const TEXTBELT_URL = 'https://textbelt.com/text';
@@ -82,6 +83,7 @@ async function enviarSMS(phone, message) {
 
 const app = express();
 app.locals.smsReplies = [];
+app.use(express.static(path.join(__dirname, 'public')));
 
 // Parse do body em JSON (requisito: body-parser) + captura do JSON bruto (necessário para validar assinatura do webhook)
 app.use(
@@ -92,6 +94,14 @@ app.use(
     }
   })
 );
+
+app.get('/sms/replies', (req, res) => {
+  const replies = Array.isArray(app.locals.smsReplies) ? app.locals.smsReplies : [];
+  const limitRaw = req.query?.limit;
+  const limit = Math.max(1, Math.min(50, Number(limitRaw) || 50));
+
+  return res.status(200).json({ success: true, replies: replies.slice(-limit).reverse() });
+});
 
 function signatureToBuffer(signature) {
   try {
