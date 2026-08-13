@@ -1,5 +1,4 @@
 const apiBaseValueEl = document.getElementById('apiBaseValue');
-const tokenValueEl = document.getElementById('tokenValue');
 const metaLineEl = document.getElementById('metaLine');
 const replyTextEl = document.getElementById('replyText');
 const sendReplyBtn = document.getElementById('sendReplyBtn');
@@ -42,7 +41,7 @@ async function loadMeta(token) {
       return;
     }
 
-    metaLineEl.textContent = `Você está respondendo para ${data.toNumberMasked}`;
+    metaLineEl.textContent = 'Você está respondendo de....';
     setReplyResult({ httpStatus: resp.status, ...data }, true);
   } catch (err) {
     metaLineEl.textContent = 'Erro ao carregar';
@@ -96,7 +95,6 @@ clearReplyBtn.addEventListener('click', () => {
 
 const token = getTokenFromUrl();
 if (apiBaseValueEl) apiBaseValueEl.textContent = API_BASE_URL || window.location.origin;
-if (tokenValueEl) tokenValueEl.textContent = token ? token.slice(0, 8) + '…' : '-';
 
 if (!token) {
   metaLineEl.textContent = 'Token ausente';

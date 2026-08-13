@@ -602,15 +602,9 @@ app.get('/reply/meta', async (req, res) => {
       return res.status(404).json({ success: false, error: 'Conversa não encontrada' });
     }
 
-    const to = String(conversation.toNumber || '');
-    const masked =
-      to.length >= 6 ? `${to.slice(0, 4)}${'*'.repeat(Math.max(0, to.length - 7))}${to.slice(-3)}` : to;
-
     return res.status(200).json({
       success: true,
-      token: conversation.token,
-      createdAt: conversation.createdAt,
-      toNumberMasked: masked
+      createdAt: conversation.createdAt
     });
   } catch (error) {
     return res.status(500).json({ success: false, error: error?.message || String(error) });

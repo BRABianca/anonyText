@@ -1,0 +1,50 @@
+name: Security Checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    name: npm audit + secrets check
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: npm audit
+        run: npm audit --audit-level=moderate || true
+        continue-on-error: true
+
+      - name: Check for hardcoded secrets
+        run: |
+          FOUND=0
+          echo "== Verificando TEXTBELT_API_KEY / DATABASE_URL / AUTH_SECRET hardcoded =="
+          if grep -rEn "(TEXTBELT_API_KEY|DATABASE_URL|SMS_AUTH_SECRET|AUTH_SECRET)\s*[:=]\s*['\"]?[A-Za-z0-9_\-]{10,}" \
+            . --include="*.js" --include="*.json" --include="*.ts" --include="*.mjs" --include="*.cjs" \
+            --exclude-dir=node_modules --exclude-dir=.git; then
+            echo "::warning:: Possivel credencial hardcoded encontrada"
+            FOUND=1
+          else
+            echo "OK: sem credenciais hardcoded em arquivos fontes"
+          fi
+          exit 0
+
+      - name: Check .env in .gitignore
+        run: |
+          if ! grep -qE "^\.env(\s|$)" .gitignore; then
+            echo "::warning:: .env nao encontrado em .gitignore"
+            exit 1
+          fi
+          echo "OK: .env no .gitignore"

@@ -1,36 +1,15 @@
 version: 2
 updates:
-  # Enable version updates for npm
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
       interval: "weekly"
       day: "monday"
-      time: "03:00"
     open-pull-requests-limit: 5
-    reviewers:
-      - "BRABianca"
     labels:
       - "dependencies"
       - "npm"
-    # Allow automatic merging for patch and minor updates
-    allow:
-      - dependency-type: "all"
-    # Require approval for major updates
     commit-message:
       prefix: "chore(deps):"
       prefix-scope: "dependencies"
       include: "scope"
-
-  # Enable version updates for GitHub Actions
-  - package-ecosystem: "github-actions"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "04:00"
-    reviewers:
-      - "BRABianca"
-    labels:
-      - "dependencies"
-      - "github-actions"
